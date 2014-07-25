@@ -1,0 +1,144 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Joshua Smith"
+date: "Tuesday, July 22, 2014"
+output: html_document
+---
+
+#Predicting exercise behaviors utilizing kinetic measurements
+
+##Question
+
+The goal is to predict various exercise behaviors utilizing kinetic input from devices attached to various regions of the body. The original data owners describe their data collection design:
+
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E)" (See citation at the end of this document.)
+
+A Random Forest algorithm is applied to the data collected from these devices to fit a model. Diagnostics indicate that this model performs well and accurately predicts data from the test set.
+
+##Input Data
+
+```{r}
+data <- read.csv("pml-training.csv")
+str(data)
+```
+
+##Feature Selection
+
+The provided data is a collection of 160 observations of 19,622 variables. Many of these observations are aggregate descriptives, such as kurtosis, skewness, maximum, minimum, amplitutde, average, variation, standard deviation and total. Because the goal is to predict the classe of an individual observation, these aggregates will be removed.
+
+```{r}
+data_set <- data[, - grep("kurtosis", colnames(data))]
+data_set <- data_set[, - grep("skewness", colnames(data_set))]
+data_set <- data_set[, - grep("max", colnames(data_set))]
+data_set <- data_set[, - grep("min", colnames(data_set))]
+data_set <- data_set[, - grep("amplitude", colnames(data_set))]
+data_set <- data_set[, - grep("avg", colnames(data_set))]
+data_set <- data_set[, - grep("var", colnames(data_set))]
+data_set <- data_set[, - grep("stddev", colnames(data_set))]
+data_set <- data_set[, - grep("total", colnames(data_set))]
+```
+
+The data also includes identifiers for the actual observation that are not direct measurements of the movement, such as the time, the window of time, the user name, and a row identifier "X". Again, the goal is to predict movements from the measurements of the kinetic monitoring devices, so data such as the individual identifiers or dates/times will also be removed.
+
+
+```{r}
+data_set <- data_set[, - grep("timestamp", colnames(data_set))]
+data_set <- data_set[, - grep("window", colnames(data_set))]
+data_set <- data_set[, -1]
+data_set <- data_set[, -1]
+```
+
+The resulting data frame has 19,622 observations of 49 variables. The final vector, "classe", is the variable to be predicted, whereas the previous 48 columns will be utilized as predictors. 
+
+###Create training and testing sets
+
+Out of the data provided, the data is split 60/40 into a training and testing set, respectively.
+
+```{r}
+library(caret)
+set.seed(12345)
+inTrain <- createDataPartition(y = data_set$classe, p = 0.6, list = FALSE)
+training <- data_set[inTrain,]
+testing <- data_set[-inTrain,]
+```
+
+###Exploratory Data Analysis
+
+```{r}
+barplot(prop.table(table(training$classe)), main = "Occurences of each Classe", ylab = "Percent of Total Occurences")
+```
+
+The barplot shows the distribution of classes. Class A is most represented, class D is the least represented, and the remaining classes are fairly evenly distributed. Consequently, the expected outcome of the model is to predict a proportionately large number of classe A and a proportionately lower number of class D, with the other variables similarly distributed.
+
+```{r, warnings = FALSE}
+library(mclust)
+distribution <- dist(training[-49])
+hClustering<- hclust(distribution)
+plot(hClustering)
+```
+
+The above Dendogram shows the complex cluster relationships of the various features. As the clusters further segment the relationships become significantly more complex and, consequently, the lower portion of the graphic becomes unintelligible (obviously a considerable portion of this is due to the number of variables being represented in a limited display). 
+
+##Algorithm
+
+The thorough segmentation of the above cluster analysis suggests that a random forest model may be an appropriate algorithm to utilize.
+
+
+```{r}
+set.seed(1323)
+modFit <- train(classe ~ ., method = "rf", data = training, prox=TRUE)
+```
+
+##Evaluation
+
+###Model diagnostics compared to training set
+
+```{r}
+modFit
+```
+
+The summary of the random forest model shows that the Bootstrapping method was applied for 25 resampling repetitions. The utilized sample sizes for the data was 11,776 observations. 
+
+The final mtry selected by the model was mtry = 2. The caret package train() function autoamtically performs cross validation during the resampling. Mtry = 2 was selected based upon maximizing the accuracy and kappa values (0.986 and 0.983, respectively). Both accuracy and kappa have a relatively low standard deviation ( < 0.00 for both values).
+
+```{r}
+confusionMatrix(modFit)
+```
+
+The confusion matrix for the model on the training set shows a very small percentage of incorrectly predicted values (less than 1%).
+
+As was expected based upon the barplot (above) of the occurences of each class factor, the most commonly predicted value is A and the least commonly predicted value is D, with the remaining values fairly similarly distributed.
+
+```{r}
+plot(modFit$finalModel, main = "Model error rates vs. number of trees")
+```
+
+The plot of error rates vs. the number of trees shows the expected result of the error rate as the number of trees increases.
+
+###Model diagnostics compared to testing set
+
+```{r}
+mod_pred <- predict(modFit, testing)
+table(mod_pred, testing$classe)
+```
+
+The confusion matrix comparing the predicted values to the actual values of the test set show high accuracy as well.
+
+```{r}
+plot(predict(modFit, testing), testing$classe, main = "Plot of predicted testing values vs actual values")
+```
+
+The above plot is a graphical representation of the confusion matrix, again verifying a low percentage of missclassified values. 
+
+The results suggest that this model has an appropriate fit and is an excellent predictor of values.
+
+
+##Data Citation:
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz38LSNkpsD
+
+```{r}
+sessionInfo()
+```
